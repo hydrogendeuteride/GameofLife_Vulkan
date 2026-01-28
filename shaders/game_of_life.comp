@@ -3,7 +3,7 @@
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(binding = 0) uniform sampler2D uSrc;
-layout(binding = 1, rgba8) uniform writeonly image2D uDst;
+layout(binding = 1, r8) uniform writeonly image2D uDst;
 
 layout(push_constant) uniform Push
 {
@@ -12,13 +12,15 @@ layout(push_constant) uniform Push
     uint _pad;
 } pc;
 
+shared uint sTile[18][18];
+
 int wrap_i(int v, int m)
 {
     int r = v % m;
     return (r < 0) ? (r + m) : r;
 }
 
-ivec2 neighbor_coord(ivec2 p)
+ivec2 wrap_or_clamp(ivec2 p)
 {
     if (pc.wrap != 0u)
     {
@@ -27,35 +29,79 @@ ivec2 neighbor_coord(ivec2 p)
     return clamp(p, ivec2(0), ivec2(int(pc.size.x) - 1, int(pc.size.y) - 1));
 }
 
-int alive_at(ivec2 p)
+uint alive_at(ivec2 p)
 {
     vec4 c = texelFetch(uSrc, p, 0);
-    return (c.r > 0.5) ? 1 : 0;
+    return (c.r > 0.5) ? 1u : 0u;
 }
 
 void main()
 {
-    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
-    if (pos.x >= int(pc.size.x) || pos.y >= int(pc.size.y))
+    ivec2 base = ivec2(gl_WorkGroupID.xy) * ivec2(16, 16);
+    ivec2 local = ivec2(gl_LocalInvocationID.xy);
+    ivec2 pos = base + local;
+    bool inBounds = (pos.x < int(pc.size.x)) && (pos.y < int(pc.size.y));
+
+    ivec2 clampedPos = wrap_or_clamp(pos);
+    sTile[local.y + 1][local.x + 1] = alive_at(clampedPos);
+
+    if (local.x == 0)
+    {
+        sTile[local.y + 1][0] = alive_at(wrap_or_clamp(pos + ivec2(-1, 0)));
+    }
+    if (local.x == 15)
+    {
+        sTile[local.y + 1][17] = alive_at(wrap_or_clamp(pos + ivec2(1, 0)));
+    }
+    if (local.y == 0)
+    {
+        sTile[0][local.x + 1] = alive_at(wrap_or_clamp(pos + ivec2(0, -1)));
+    }
+    if (local.y == 15)
+    {
+        sTile[17][local.x + 1] = alive_at(wrap_or_clamp(pos + ivec2(0, 1)));
+    }
+
+    if (local.x == 0 && local.y == 0)
+    {
+        sTile[0][0] = alive_at(wrap_or_clamp(pos + ivec2(-1, -1)));
+    }
+    if (local.x == 15 && local.y == 0)
+    {
+        sTile[0][17] = alive_at(wrap_or_clamp(pos + ivec2(1, -1)));
+    }
+    if (local.x == 0 && local.y == 15)
+    {
+        sTile[17][0] = alive_at(wrap_or_clamp(pos + ivec2(-1, 1)));
+    }
+    if (local.x == 15 && local.y == 15)
+    {
+        sTile[17][17] = alive_at(wrap_or_clamp(pos + ivec2(1, 1)));
+    }
+
+    barrier();
+
+    if (!inBounds)
     {
         return;
     }
 
-    int n = 0;
-    for (int dy = -1; dy <= 1; ++dy)
-    {
-        for (int dx = -1; dx <= 1; ++dx)
-        {
-            if (dx == 0 && dy == 0) continue;
-            ivec2 p = neighbor_coord(pos + ivec2(dx, dy));
-            n += alive_at(p);
-        }
-    }
+    int sx = local.x + 1;
+    int sy = local.y + 1;
 
-    int cur = alive_at(pos);
-    bool nextAlive = (cur != 0) ? (n == 2 || n == 3) : (n == 3);
+    uint n = 0u;
+    n += sTile[sy - 1][sx - 1];
+    n += sTile[sy - 1][sx + 0];
+    n += sTile[sy - 1][sx + 1];
+    n += sTile[sy + 0][sx - 1];
+    n += sTile[sy + 0][sx + 1];
+    n += sTile[sy + 1][sx - 1];
+    n += sTile[sy + 1][sx + 0];
+    n += sTile[sy + 1][sx + 1];
+
+    uint cur = sTile[sy][sx];
+    bool nextAlive = (cur != 0u) ? (n == 2u || n == 3u) : (n == 3u);
 
     vec4 outColor = nextAlive ? vec4(1.0, 1.0, 1.0, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
     imageStore(uDst, pos, outColor);
 }
-

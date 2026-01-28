@@ -85,12 +85,13 @@ void MinimalGame::draw_ui()
     ImGui::TextUnformatted("Rendering pipeline still exists; game logic is intentionally empty.");
 
     ImGui::Separator();
-    ImGui::TextUnformatted("Game of Life (Compute, 4096x4096)");
-
     if (renderer && renderer->_renderPassManager)
     {
         if (auto *gol = renderer->_renderPassManager->getPass<GameOfLifePass>())
         {
+            VkExtent2D e = gol->extent();
+            ImGui::Text("Game of Life (Compute, %ux%u)", e.width, e.height);
+
             bool enabled = gol->enabled();
             if (ImGui::Checkbox("Enable", &enabled))
             {

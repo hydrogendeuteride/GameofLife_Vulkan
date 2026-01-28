@@ -230,7 +230,7 @@ void GameOfLifePass::ensure_images()
     if (_state[0].image != VK_NULL_HANDLE && _state[1].image != VK_NULL_HANDLE) return;
 
     VkExtent3D extent3d{_extent.width, _extent.height, 1};
-    constexpr VkFormat fmt = VK_FORMAT_R8G8B8A8_UNORM;
+    constexpr VkFormat fmt = VK_FORMAT_R8_UNORM;
     const VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
 
     for (int i = 0; i < 2; ++i)
