@@ -1,0 +1,45 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0, rgba8) uniform writeonly image2D uDst;
+
+layout(push_constant) uniform Push
+{
+    uvec2 size;
+    float fill;
+    uint seed;
+} pc;
+
+uint wang_hash(uint s)
+{
+    s = (s ^ 61u) ^ (s >> 16u);
+    s *= 9u;
+    s = s ^ (s >> 4u);
+    s *= 0x27d4eb2du;
+    s = s ^ (s >> 15u);
+    return s;
+}
+
+float rand01(uvec2 p, uint seed)
+{
+    uint h = seed ^ (p.x * 73856093u) ^ (p.y * 19349663u);
+    h = wang_hash(h);
+    return float(h) / 4294967295.0;
+}
+
+void main()
+{
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    if (pos.x >= int(pc.size.x) || pos.y >= int(pc.size.y))
+    {
+        return;
+    }
+
+    float r = rand01(uvec2(pos), pc.seed);
+    bool alive = (r < pc.fill);
+
+    vec4 outColor = alive ? vec4(1.0, 1.0, 1.0, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+    imageStore(uDst, pos, outColor);
+}
+
