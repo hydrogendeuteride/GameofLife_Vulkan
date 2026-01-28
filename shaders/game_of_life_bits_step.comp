@@ -1,0 +1,120 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) readonly buffer Src
+{
+    uint data[];
+} src;
+
+layout(binding = 1) writeonly buffer Dst
+{
+    uint data[];
+} dst;
+
+layout(push_constant) uniform Push
+{
+    uvec2 size;       // cells
+    uint wordsPerRow; // size.x / 32 (must be exact)
+    uint wrap;        // 0 = clamp-to-edge, 1 = wrap
+} pc;
+
+void add1(inout uint ones, inout uint twos, inout uint fours, inout uint eights, uint m)
+{
+    uint c1 = ones & m;
+    ones ^= m;
+
+    uint c2 = twos & c1;
+    twos ^= c1;
+
+    uint c3 = fours & c2;
+    fours ^= c2;
+
+    eights ^= c3;
+}
+
+uint load_word(uint xw, uint y)
+{
+    return src.data[y * pc.wordsPerRow + xw];
+}
+
+uint mask_left(uint wL, uint wC, bool leftEdge)
+{
+    uint carry = (pc.wrap != 0u) ? (wL >> 31) : (leftEdge ? (wC & 1u) : (wL >> 31));
+    return (wC << 1) | carry;
+}
+
+uint mask_right(uint wR, uint wC, bool rightEdge)
+{
+    uint carry = (pc.wrap != 0u) ? (wR << 31) : (rightEdge ? (wC & 0x80000000u) : (wR << 31));
+    return (wC >> 1) | carry;
+}
+
+void main()
+{
+    uint xw = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (xw >= pc.wordsPerRow || y >= pc.size.y)
+    {
+        return;
+    }
+
+    uint lastWord = pc.wordsPerRow - 1u;
+    bool leftEdge = (xw == 0u);
+    bool rightEdge = (xw == lastWord);
+
+    uint xwL = (pc.wrap != 0u) ? (leftEdge ? lastWord : (xw - 1u)) : (leftEdge ? xw : (xw - 1u));
+    uint xwR = (pc.wrap != 0u) ? (rightEdge ? 0u : (xw + 1u)) : (rightEdge ? xw : (xw + 1u));
+
+    uint yUp = (pc.wrap != 0u) ? ((y == 0u) ? (pc.size.y - 1u) : (y - 1u)) : ((y == 0u) ? 0u : (y - 1u));
+    uint yDn = (pc.wrap != 0u) ? ((y + 1u == pc.size.y) ? 0u : (y + 1u)) : ((y + 1u == pc.size.y) ? y : (y + 1u));
+
+    // Up row
+    uint uLw = load_word(xwL, yUp);
+    uint uCw = load_word(xw, yUp);
+    uint uRw = load_word(xwR, yUp);
+
+    // Cur row
+    uint cLw = load_word(xwL, y);
+    uint cCw = load_word(xw, y);
+    uint cRw = load_word(xwR, y);
+
+    // Down row
+    uint dLw = load_word(xwL, yDn);
+    uint dCw = load_word(xw, yDn);
+    uint dRw = load_word(xwR, yDn);
+
+    // Neighbor bitmasks aligned to current word's bits.
+    uint uL = mask_left(uLw, uCw, leftEdge);
+    uint u = uCw;
+    uint uR = mask_right(uRw, uCw, rightEdge);
+
+    uint cL = mask_left(cLw, cCw, leftEdge);
+    uint cR = mask_right(cRw, cCw, rightEdge);
+
+    uint dL = mask_left(dLw, dCw, leftEdge);
+    uint d = dCw;
+    uint dR = mask_right(dRw, dCw, rightEdge);
+
+    uint ones = 0u;
+    uint twos = 0u;
+    uint fours = 0u;
+    uint eights = 0u;
+
+    add1(ones, twos, fours, eights, uL);
+    add1(ones, twos, fours, eights, u);
+    add1(ones, twos, fours, eights, uR);
+    add1(ones, twos, fours, eights, cL);
+    add1(ones, twos, fours, eights, cR);
+    add1(ones, twos, fours, eights, dL);
+    add1(ones, twos, fours, eights, d);
+    add1(ones, twos, fours, eights, dR);
+
+    uint mask2 = (~ones) & twos & (~fours) & (~eights);
+    uint mask3 = ones & twos & (~fours) & (~eights);
+
+    uint next = (cCw & (mask2 | mask3)) | ((~cCw) & mask3);
+    dst.data[y * pc.wordsPerRow + xw] = next;
+}
+

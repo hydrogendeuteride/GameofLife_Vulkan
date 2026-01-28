@@ -51,7 +51,7 @@ void main()
     }
     if (local.x == 15)
     {
-        sTile[local.y + 1][17] = alive_at(wrap_or_clamp(pos + ivec2(1, 0)));
+        sTile[local.y + 1][17] = alive_at(wrap_or_clamp(pos  + ivec2(1, 0)));
     }
     if (local.y == 0)
     {

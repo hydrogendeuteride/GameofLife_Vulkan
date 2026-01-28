@@ -1,0 +1,38 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0) readonly buffer Src
+{
+    uint data[];
+} src;
+
+layout(binding = 1, r8) uniform writeonly image2D uDst;
+
+layout(push_constant) uniform Push
+{
+    uvec2 simSize;     // cells
+    uvec2 previewSize; // pixels
+} pc;
+
+void main()
+{
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    if (pos.x >= int(pc.previewSize.x) || pos.y >= int(pc.previewSize.y))
+    {
+        return;
+    }
+
+    uint x = (uint(pos.x) * pc.simSize.x) / pc.previewSize.x;
+    uint y = (uint(pos.y) * pc.simSize.y) / pc.previewSize.y;
+
+    uint wordsPerRow = (pc.simSize.x + 31u) / 32u;
+    uint xw = x >> 5;
+    uint bit = x & 31u;
+
+    uint w = src.data[y * wordsPerRow + xw];
+    float alive = float((w >> bit) & 1u);
+
+    imageStore(uDst, pos, vec4(alive, 0.0, 0.0, 1.0));
+}
+

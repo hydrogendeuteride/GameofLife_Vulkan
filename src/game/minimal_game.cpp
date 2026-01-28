@@ -112,6 +112,13 @@ void MinimalGame::draw_ui()
                 gol->set_wrap(wrap);
             }
 
+            bool preview = gol->preview_enabled();
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Preview", &preview))
+            {
+                gol->set_preview_enabled(preview);
+            }
+
             float hz = gol->simulation_hz();
             if (ImGui::SliderFloat("Sim Hz", &hz, 0.0f, 120.0f, "%.1f"))
             {
@@ -145,13 +152,13 @@ void MinimalGame::draw_ui()
 
             if (void *tex = gol->imgui_texture_id())
             {
-                VkExtent2D e = gol->extent();
+                VkExtent2D e = gol->preview_extent();
                 ImVec2 size{static_cast<float>(e.width) * _gol_zoom, static_cast<float>(e.height) * _gol_zoom};
                 ImGui::Image(tex, size);
             }
             else
             {
-                ImGui::TextUnformatted("Enable the pass to view output.");
+                ImGui::TextUnformatted(gol->preview_enabled() ? "Enable the pass to view output." : "Preview disabled.");
             }
         }
         else

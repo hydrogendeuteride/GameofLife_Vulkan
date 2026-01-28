@@ -1,0 +1,68 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) writeonly buffer Dst
+{
+    uint data[];
+} dst;
+
+layout(push_constant) uniform Push
+{
+    uvec2 size;       // cells
+    uint wordsPerRow;
+    uint seed;
+    uint fillThreshold; // [0..0xFFFFFFFF]
+    uint _pad0;
+    uint _pad1;
+    uint _pad2;
+} pc;
+
+uint wang_hash(uint s)
+{
+    s = (s ^ 61u) ^ (s >> 16u);
+    s *= 9u;
+    s = s ^ (s >> 4u);
+    s *= 0x27d4eb2du;
+    s = s ^ (s >> 15u);
+    return s;
+}
+
+void main()
+{
+    uint xw = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (xw >= pc.wordsPerRow || y >= pc.size.y)
+    {
+        return;
+    }
+
+    uint outWord = 0u;
+
+    if (pc.fillThreshold == 0u)
+    {
+        outWord = 0u;
+    }
+    else if (pc.fillThreshold == 0xFFFFFFFFu)
+    {
+        outWord = 0xFFFFFFFFu;
+    }
+    else
+    {
+        uint h = pc.seed ^ (xw * 73856093u) ^ (y * 19349663u);
+        h = wang_hash(h);
+
+        for (uint b = 0u; b < 32u; ++b)
+        {
+            h = wang_hash(h + b * 2654435761u);
+            if (h < pc.fillThreshold)
+            {
+                outWord |= (1u << b);
+            }
+        }
+    }
+
+    dst.data[y * pc.wordsPerRow + xw] = outWord;
+}
+
